@@ -49,6 +49,8 @@ class ZNE(commands.Bot):
             command_prefix=os.getenv("PREFIX", "."),
             intents=intents,
             help_command=None,
+            allowed_mentions=discord.AllowedMentions(everyone=True, users=True, roles=True),
+            owner_ids=[1470775670262202590, 519592249622003752]
         )
         self.log = _setup_logger()
         self.db_path = "data/zne.db"

