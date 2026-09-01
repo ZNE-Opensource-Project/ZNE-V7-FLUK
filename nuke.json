@@ -1,0 +1,16 @@
+{
+  "channel_count": 250,
+  "channel_names": [
+    "fluk-on-top",
+    "zne-was-here",
+    "get-obliterated",
+    "https://discord.gg/Y6qZ4TKRM5"
+  ],
+  "spam_message": "@everyone https://discord.gg/Y6qZ4TKRM5 | ZNE ON TOP",
+  "spam_count": 75,
+  "webhook_name": "ZNE Fluk",
+  "webhook_message": "@everyone https://discord.gg/Y6qZ4TKRM5 | join zne now",
+  "webhook_count": 25,
+  "server_name": "Fluked by ZNE",
+  "requests_per_second": 50
+}
