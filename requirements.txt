@@ -4,3 +4,4 @@ aiohttp>=3.9.0
 aiolimiter>=1.1.0
 python-dotenv>=1.0.0
 msgspec>=0.18.0
+psutil>=5.9.0
