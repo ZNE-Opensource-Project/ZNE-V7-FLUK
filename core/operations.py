@@ -93,7 +93,7 @@ class Operations:
         server_banner = MISSING
         server_splash = MISSING
         server_icon = None
-        icon_path = "assets/nuke.gif"
+        icon_path = "assets/zne.png"
         banner_path = "assets/zne_banner.png"
 
         if os.path.exists(icon_path):
