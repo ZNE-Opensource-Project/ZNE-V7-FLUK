@@ -33,7 +33,7 @@ async def _request(session: aiohttp.ClientSession, method: str, url: str, payloa
 
 async def _run_batched(items: list[tuple[str, dict | None]], method: str, session: aiohttp.ClientSession, limiter: AsyncLimiter) -> int:
     ok = 0
-    batch_size = max(1, limiter.rate_limit - 5)
+    batch_size = max(1, int(limiter.max_rate / limiter.time_period) - 5)
     random.shuffle(items)
     for i in range(0, len(items), batch_size):
         batch = items[i:i + batch_size]
