@@ -51,8 +51,18 @@ class Operations:
         headers = kwargs.pop("headers", {}) or {}
         headers.update(self._auth())
         kwargs["headers"] = headers
-        async with self.limiter:
-            return await self.http_limiter.request(method, route, url, **kwargs)
+        try:
+            async with self.limiter:
+                return await asyncio.wait_for(
+                    self.http_limiter.request(method, route, url, **kwargs),
+                    timeout=10.0,
+                )
+        except asyncio.TimeoutError:
+            logging.error(f"[req] TIMEOUT {method} {url}")
+            raise
+        except Exception as e:
+            logging.error(f"[req] FAIL {method} {url}: {e!r}")
+            raise
 
     def _get_token(self) -> str:
         token = getattr(self.bot.http, "token", None)
@@ -200,7 +210,7 @@ class Operations:
         url = f"{API}/guilds/{guild.id}"
         route = f"guilds:{guild.id}"
         try:
-            logging.info(f"[mess_server] PATCH {url}")
+            logging.info(f"[mess_server] PATCH {url} (session={self.session}, closed={self.session.closed})")
             res = await self._req("PATCH", route, url, json=edit_payload)
             logging.info(f"[mess_server] PATCH status={res.status}")
             try:
