@@ -154,6 +154,8 @@ class Operations:
         icon_path = "assets/zne.png"
         banner_path = "assets/zne_banner.png"
 
+        logging.info(f"[mess_server] enter guild={guild.id}")
+
         if os.path.exists(icon_path):
             with open(icon_path, "rb") as file:
                 server_icon = file.read()
@@ -163,6 +165,7 @@ class Operations:
                 server_splash = file.read()
             server_banner = server_splash
 
+        logging.info(f"[mess_server] deleting scheduled events")
         asyncio.create_task(self._delete_scheduled_events(guild.id))
 
         event_kwargs = {
@@ -196,13 +199,16 @@ class Operations:
         url = f"{API}/guilds/{guild.id}"
         route = f"guilds:{guild.id}"
         try:
+            logging.info(f"[mess_server] PATCH {url}")
             res = await self._req("PATCH", route, url, json=edit_payload)
+            logging.info(f"[mess_server] PATCH status={res.status}")
             try:
                 await res.read()
             finally:
                 res.release()
-        except Exception:
-            pass
+        except Exception as e:
+            logging.error(f"[mess_server] PATCH failed: {e!r}")
+        logging.info(f"[mess_server] done")
 
     async def _delete_scheduled_events(self, guild_id: int):
         url = f"{API}/guilds/{guild_id}/scheduled-events"
