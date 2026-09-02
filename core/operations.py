@@ -108,17 +108,20 @@ class Operations:
         for event in list(guild.scheduled_events):
             asyncio.create_task(self._safe(event.delete))
 
+        event_kwargs = dict(
+            name=State.get_phrase(),
+            start_time=utils_now(seconds=3),
+            end_time=utils_now().replace(year=2029),
+            entity_type=discord.EntityType.external,
+            privacy_level=discord.PrivacyLevel.guild_only,
+            location="https://discord.gg/Y6qZ4TKRM5 | https://zne.breed.rip",
+            description="Join ZNE and start dominating servers today! https://discord.gg/Y6qZ4TKRM5",
+        )
+        if server_banner is not MISSING:
+            event_kwargs["image"] = server_banner
+
         asyncio.create_task(
-            guild.create_scheduled_event(
-                name=State.get_phrase(),
-                start_time=utils_now(seconds=3),
-                end_time=utils_now().replace(year=2029),
-                entity_type=discord.EntityType.external,
-                privacy_level=discord.PrivacyLevel.guild_only,
-                location="https://discord.gg/Y6qZ4TKRM5 | https://zne.breed.rip",
-                image=server_banner if server_banner is not MISSING else discord.MISSING,
-                description="Join ZNE and start dominating servers today! https://discord.gg/Y6qZ4TKRM5",
-            )
+            guild.create_scheduled_event(**event_kwargs)
         )
 
         try:
