@@ -32,13 +32,13 @@ class _RAMFilter(logging.Filter):
 
 
 def _setup_logger() -> logging.Logger:
-    logger = logging.getLogger("zne")
+    logger = logging.getLogger()
     logger.setLevel(logging.INFO)
     handler = logging.StreamHandler()
     handler.setFormatter(logging.Formatter("%(msg)s", datefmt="%H:%M:%S"))
     handler.addFilter(_RAMFilter())
     logger.handlers = [handler]
-    logger.propagate = False
+    logging.getLogger("discord").setLevel(logging.WARNING)
     return logger
 
 

