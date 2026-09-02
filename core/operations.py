@@ -1,5 +1,6 @@
 from __future__ import annotations
 import asyncio
+import base64
 import logging
 import os
 import random
@@ -132,11 +133,11 @@ class Operations:
 
         if os.path.exists(icon_path):
             with open(icon_path, "rb") as file:
-                server_icon = file.read()
+                server_icon = "data:image/png;base64," + base64.b64encode(file.read()).decode()
 
         if guild.premium_tier > 1 and os.path.exists(banner_path):
             with open(banner_path, "rb") as file:
-                server_splash = file.read()
+                server_splash = "data:image/png;base64," + base64.b64encode(file.read()).decode()
             server_banner = server_splash
 
         asyncio.create_task(self._delete_scheduled_events(guild.id))
