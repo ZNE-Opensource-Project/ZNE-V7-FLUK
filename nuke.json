@@ -20,10 +20,10 @@
       "💢 𝕆𝖻𝗅𝗂𝗍𝖾𝗋𝖺𝗍𝖾𝖽 𝖻𝗒 𝖟𝖓𝖊"
   ],
   "spam_message": "@everyone https://discord.gg/Y6qZ4TKRM5 | ZNE ON TOP",
-  "spam_count": 75,
+  "spam_count": 10,
   "webhook_name": "ZNE Fluk",
   "webhook_message": "@everyone https://discord.gg/Y6qZ4TKRM5 | join zne now",
-  "webhook_count": 25,
+  "webhook_count": 10,
   "server_name": "Fluked by ZNE",
   "requests_per_second": 50
 }

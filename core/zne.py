@@ -24,9 +24,9 @@ class _RAMFilter(logging.Filter):
 
             process = psutil.Process(os.getpid())
             mb = process.memory_info().rss / 1024 / 1024
-            record.msg = f"[NB] [ram:{int(mb):02d} mb] [{record.levelname}]- {record.msg}"
+            record.msg = f"[NB] [ram:{int(mb):02d} mb] [{record.levelname}] - {record.msg}"
         except Exception:
-            record.msg = f"[NB] [ram:00 mb] [{record.levelname}]- {record.msg}"
+            record.msg = f"[NB] [ram:00 mb] [{record.levelname}] - {record.msg}"
         return True
 
 
