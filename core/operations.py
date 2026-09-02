@@ -32,6 +32,7 @@ class Operations:
             self.bot.http.fast_limiter = limiter(self.bot.http)
         self.http_limiter = self.bot.http.fast_limiter
         self.session = aiohttp.ClientSession()
+        self.http_limiter.override_session = self.session
         rps = max(1, self.settings.requests_per_second)
         self.limiter = AsyncLimiter(rps, 1)
         self.token = self.bot.http.token

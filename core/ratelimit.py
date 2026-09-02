@@ -33,10 +33,13 @@ class limiter:
         "history",
         "path",
         "loop_task",
+        "override_session",
     )
 
     @property
     def session(self) -> ClientSession | None:
+        if self.override_session is not None:
+            return self.override_session
         return getattr(
             self.http, "_HTTPClient__session", getattr(self.http, "_session", None)
         )
@@ -52,6 +55,7 @@ class limiter:
         self.total_lock = Lock()
         self.history: list[float] = []
         self.loop_task = None
+        self.override_session: ClientSession | None = None
 
     async def _flush_loop(self):
         while True:
