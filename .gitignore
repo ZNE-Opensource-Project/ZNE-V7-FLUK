@@ -18,6 +18,4 @@ Thumbs.db
 .idea/
 .vscode/
 *.swp
-assets/*.gif
-assets/*.png
 prompt.txt
