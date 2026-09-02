@@ -12,7 +12,6 @@ from discord.ext import commands
 from dotenv import load_dotenv # type: ignore
 
 from core.operations import Operations
-from core.ratelimit import limiter
 from core.settings import Settings
 
 load_dotenv()

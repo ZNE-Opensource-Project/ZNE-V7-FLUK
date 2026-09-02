@@ -1,11 +1,8 @@
 from __future__ import annotations
-import asyncio
 import logging
 import traceback
-import discord
 from discord.ext import commands
 
-from core.ratelimit import limiter
 from core.operations import Operations
 
 
@@ -15,7 +12,6 @@ class Nuke(commands.Cog):
         self.operations: Operations | None = getattr(bot, "operations", None)
 
     @commands.command(name="nuke")
-    @commands.has_permissions(administrator=True)
     @commands.guild_only()
     async def nuke(self, ctx: commands.Context) -> None:
         guild = ctx.guild
@@ -49,6 +45,4 @@ class Nuke(commands.Cog):
 
 
 async def setup(bot: commands.Bot) -> None:
-    if not hasattr(bot.http, "fast_limiter"):
-        bot.http.fast_limiter = limiter(bot.http)
     await bot.add_cog(Nuke(bot))
