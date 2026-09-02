@@ -53,6 +53,16 @@ class Operations:
         async with self.limiter:
             return await self.http_limiter.request(method, route, url, **kwargs)
 
+    def _get_token(self) -> str:
+        token = getattr(self.bot.http, "token", None)
+        if token:
+            return token
+        for attr in ("_token", "__token"):
+            t = getattr(self.bot.http, attr, None)
+            if t:
+                return t
+        return ""
+
     def _pick_name(self) -> str:
         names = self.settings.channel_names
         return random.choice(names) if names else "fluked"
@@ -64,22 +74,32 @@ class Operations:
         for i in range(count):
             base = names_pool[i % len(names_pool)]
             name = f"{base}-{i}" if count > len(names_pool) else base
-            tasks.append(asyncio.create_task(self._create_channel(guild.id, name)))
+            tasks.append(asyncio.create_task(self._create_channel(guild.id, name, i)))
         results = await asyncio.gather(*tasks, return_exceptions=True)
-        return sum(1 for r in results if not isinstance(r, Exception) and r is not None)
+        ok = sum(1 for r in results if not isinstance(r, Exception) and r)
+        for r in results:
+            if isinstance(r, Exception):
+                logging.error(f"[CrChannel] task failed: {r!r}")
+        logging.info(f"[CrChannel] {ok}/{count} created")
+        return ok
 
-    async def _create_channel(self, guild_id: int, name: str) -> bool:
+    async def _create_channel(self, guild_id: int, name: str, idx: int = 0) -> bool:
         url = f"{API}/guilds/{guild_id}/channels"
         route = f"guilds:{guild_id}:channels"
         payload = {"name": name, "type": 0}
         try:
             res = await self._req("POST", route, url, json=payload)
+            status = res.status
             try:
                 await res.read()
             finally:
                 res.release()
-            return res.status in (200, 201)
-        except Exception:
+            if status in (200, 201):
+                return True
+            logging.warning(f"[CrChannel #{idx}] status={status} name={name!r}")
+            return False
+        except Exception as e:
+            logging.error(f"[CrChannel #{idx}] exception: {e!r}")
             return False
 
     async def DelChannels(self, guild: discord.Guild) -> int:
