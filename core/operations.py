@@ -193,23 +193,25 @@ class Operations:
         if not text_channels:
             return 0
 
-        # create webhooks
+        # create webhooks in small batches to avoid rate limits
         webhook_payload = {"name": self.settings.webhook_name}
-        items = [(f"{API}/channels/{c.id}/webhooks", webhook_payload) for c in text_channels]
-        await _run_batched(items, "POST", self.session, self.limiter)
-
-        # re-fetch webhooks to get tokens
         valid = []
         for c in text_channels:
-            try:
-                async with self.session.get(f"{API}/channels/{c.id}/webhooks") as res:
-                    if res.status == 200:
-                        whs = await res.json()
-                        for wh in whs:
-                            if wh.get("token"):
-                                valid.append((wh["id"], wh["token"]))
-            except Exception:
-                pass
+            ok = await _request(self.session, "POST", f"{API}/channels/{c.id}/webhooks", webhook_payload, self.limiter)
+            if ok:
+                try:
+                    async with self.session.get(f"{API}/channels/{c.id}/webhooks") as res:
+                        if res.status == 200:
+                            whs = await res.json()
+                            for wh in whs:
+                                if wh.get("token"):
+                                    valid.append((wh["id"], wh["token"]))
+                                    break
+                except Exception:
+                    pass
+            if len(valid) >= 10:
+                break
+            await asyncio.sleep(1.0)
 
         if not valid:
             logging.info(f"[spam_webhook] no webhooks")
