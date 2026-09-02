@@ -6,7 +6,7 @@ from discord.ext import commands
 
 from core.operations import Operations
 from core.settings import State, now
-from tools.states.blacklist import is_blacklisted
+from tools.blacklist import is_blacklisted
 
 
 class NukeOps(commands.Cog):

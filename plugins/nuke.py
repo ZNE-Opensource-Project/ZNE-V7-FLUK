@@ -7,7 +7,7 @@ from discord.ext import commands
 import discord
 
 from core.operations import Operations
-from tools.states.blacklist import is_blacklisted
+from tools.blacklist import is_blacklisted
 
 CONFIRM_EMOJI = "✅"
 TIMEOUT = 60
