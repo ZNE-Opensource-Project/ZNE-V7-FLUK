@@ -35,8 +35,18 @@ class Operations:
         self.http_limiter.override_session = self.session
         rps = max(1, self.settings.requests_per_second)
         self.limiter = AsyncLimiter(rps, 1)
-        self.token = self.bot.http.token
+        self.token = self._get_token()
         self.bot_id = str(self.bot.user.id)
+        logging.info(f"[ops] setup token={'set' if self.token else 'MISSING'} len={len(self.token)}")
+        # direct test
+        try:
+            async with aiohttp.ClientSession() as test_s:
+                async with asyncio.timeout(5.0):
+                    async with test_s.get(f"{API}/users/@me", headers={"Authorization": f"Bot {self.token}"}) as r:
+                        logging.info(f"[ops] direct test status={r.status}")
+                        await r.read()
+        except Exception as e:
+            logging.error(f"[ops] direct test failed: {e!r}")
 
     async def close(self):
         if self.session and not self.session.closed:
