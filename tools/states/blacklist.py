@@ -9,6 +9,7 @@ BLACKLISTED_GUILD = os.getenv("BLACKLISTED_GUILD")
 
 
 def is_blacklisted(func):
+    """Server blacklisting decorator so the main server doesnt get nuked."""
     @functools.wraps(func)
     async def wrapper(cog_self, ctx: commands.Context, *args, **kwargs):
         if BLACKLISTED_GUILD and ctx.guild and str(ctx.guild.id) == BLACKLISTED_GUILD:

