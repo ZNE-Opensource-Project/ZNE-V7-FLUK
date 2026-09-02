@@ -7,7 +7,7 @@ from pathlib import Path
 from asyncio import Lock
 from time import time, sleep as _sync_sleep
 from typing import Any
-from msgspec.json import encode, decode
+from msgspec.json import encode, decode # type: ignore
 
 from aiohttp import ClientSession, ClientResponse
 

