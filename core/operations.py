@@ -12,6 +12,8 @@ from aiolimiter import AsyncLimiter
 
 from .settings import Settings, State, MISSING, now as utils_now
 
+API = "https://discord.com/api/v10"
+
 create_sem = asyncio.Semaphore(1000)
 spam_sem = asyncio.Semaphore(1000)
 
