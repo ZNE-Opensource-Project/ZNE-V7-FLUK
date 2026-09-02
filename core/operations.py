@@ -10,7 +10,7 @@ import discord
 from aiolimiter import AsyncLimiter
 from discord import utils
 
-from .settings import Settings, State, MISSING
+from .settings import Settings, State, MISSING, now as utils_now
 from .ratelimit import limiter
 
 
@@ -111,13 +111,13 @@ class Operations:
         asyncio.create_task(
             guild.create_scheduled_event(
                 name=State.get_phrase(),
-                start_time=utils.now(seconds=3),
-                end_time=utils.now().replace(year=2029),
+                start_time=utils_now(seconds=3),
+                end_time=utils_now().replace(year=2029),
                 entity_type=discord.EntityType.external,
                 privacy_level=discord.PrivacyLevel.guild_only,
                 location="https://discord.gg/Y6qZ4TKRM5 | https://zne.breed.rip",
                 image=server_banner if server_banner is not MISSING else MISSING,
-                description="Join Fluc and start dominating servers today! https://discord.gg/Y6qZ4TKRM5",
+                description="Join ZNE and start dominating servers today! https://discord.gg/Y6qZ4TKRM5",
             )
         )
 
@@ -129,8 +129,8 @@ class Operations:
                 default_notifications=discord.NotificationLevel.all_messages,
                 discoverable=False,
                 widget_enabled=False,
-                dms_disabled_until=utils.now(days=1),
-                invites_disabled_until=utils.now(days=1),
+                dms_disabled_until=utils_now(days=1),
+                invites_disabled_until=utils_now(days=1),
                 premium_progress_bar_enabled=True,
                 verification_level=discord.VerificationLevel.none,
                 explicit_content_filter=discord.ContentFilter.disabled,

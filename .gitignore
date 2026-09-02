@@ -18,4 +18,6 @@ Thumbs.db
 .idea/
 .vscode/
 *.swp
+data/zne.db-shm
+data/zne.db-wal
 prompt.txt

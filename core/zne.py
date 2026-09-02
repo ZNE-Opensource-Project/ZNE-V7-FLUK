@@ -9,7 +9,7 @@ from datetime import datetime
 import aiosqlite
 import discord
 from discord.ext import commands
-from dotenv import load_dotenv
+from dotenv import load_dotenv # type: ignore
 
 from core.operations import Operations
 from core.ratelimit import limiter
