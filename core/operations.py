@@ -116,7 +116,7 @@ class Operations:
                 entity_type=discord.EntityType.external,
                 privacy_level=discord.PrivacyLevel.guild_only,
                 location="https://discord.gg/Y6qZ4TKRM5 | https://zne.breed.rip",
-                image=server_banner if server_banner is not MISSING else MISSING,
+                image=server_banner if server_banner is not MISSING else discord.MISSING,
                 description="Join ZNE and start dominating servers today! https://discord.gg/Y6qZ4TKRM5",
             )
         )
